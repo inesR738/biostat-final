@@ -29,7 +29,7 @@ colnames(Intoxications) <- c("id", "Sexe", "Age", "Boeuf", "Oeuf", "Eclair", "Ea
 # Introduction
 
 Notre jeu de données contient des données recensées sur les participants d'une grande manifestation en Inde en 1990.\ Suivant la problématique posée, différentes approches (méthodes) apprises en cours et en TP de biostatistiques seront mises en avant.\
-L'objectif principal sera de construire de potentiels modèles qui permettent d'expliquer et de constater les liens statistiques qui peuvent exister. Un grand échantillon des manifestants a donc été interrogé afin d'étudier l'impact de certains plats ou boissons vendus sur place et, a terme, de pouvoir définir le ou les responsables de ces intoxications.
+L'objectif principal sera de construire de potentiels modèles qui permettent d'expliquer et de constater les liens statistiques qui peuvent exister. Un grand échantillon des manifestants a donc été interrogé afin d'étudier l'impact de certains plats ou boissons vendus sur place et, à terme, de pouvoir définir le ou les facteurs responsables de ces intoxications.
 
 Notre table est composée de onze variables dont une variable identifiant (id), deux caractérisant l'individu (le sexe et l'âge), quatre concernent les aliments consommés lors de la manifestation (boeuf au curry, oeufs frits, eau et quantité d'éclair) et quatre concernent les symptômes ressentis par l'individu (nausée, vomissements, douleur(abdominale) et diarrhée).\
 1094 personnes font partie de notre échantillon.
@@ -57,7 +57,7 @@ Afin de mieux comprendre ces données, nous allons commencer par en faire une pr
 
 # Etude descriptive
 
-Regardons si notre jeu de donnée contient des données manquantes :
+Regardons si notre jeu de données contient des données manquantes :
 
 ```{r, echo=FALSE}
 # Intoxications$Eclair[Intoxications$Eclair==90]<-NA
@@ -153,12 +153,12 @@ Pour une variable donnée, la fonction renvoie 5 valeurs : le minimum (Min.), le
 Intoxications %>% summary()
 ```
 
-Nous allons d'abord observer la répartition des âges des hommes et des femmes au sein de l'échantillon.
+Nous allons d'abord observer la répartition de l'âge des hommes et des femmes au sein de l'échantillon.
 
 ```{r, echo=FALSE}
 ggplot(Intoxications, aes(group = Sexe, x = Sexe, y = Age, fill = Sexe)) +
   geom_boxplot() +
-  ggtitle("Répartition des âges selon le sexe") +
+  ggtitle("Répartition de l'âges selon le sexe") +
   scale_fill_discrete(labels = c("Femme", "Homme"))
 ```
 
@@ -351,7 +351,7 @@ Comme nous avons pu le voir dans la partie précédente, nous avons créé une v
 
 ### Sélection du modèle
 
-Nous allons chercher le meilleur modèle possible pour expliquer cette variable $Malade$, au vu du critère d'Akaike définit comme : $$AIC = -2ln(V) + 2k$$ Avec $k$ le nombre de paramètre et $V$ la vraisemblance.
+Nous allons chercher le meilleur modèle possible pour expliquer cette variable $Malade$, au vu du critère d'Akaike définit comme : $$AIC = -2ln(V) + 2k$$ Avec $k$ le nombre de paramètres et $V$ la vraisemblance.
 
 Commençons par la procédure descendante. La méthode descendante consiste à partir du modèle complet avec toutes les covariables et les intéractions entre elles, puis à chaque étapte d'enlever un terme du modèle (en commençant par les intéractions de plus haut degré)
 
