@@ -1,0 +1,781 @@
+---
+title: "Etude d'une intoxication alimentaire en Inde en 1990"
+author: "Vincent Mouillot  & Inès Rouached"
+date: "14/01/2022"
+output: 
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(tidyverse)
+library(MASS)
+library(ggplot2)
+library(patchwork)
+library(modelsummary)
+```
+
+\newpage
+
+```{r, echo=FALSE}
+Intoxications <- read_excel("Intoxications.xls")
+colnames(Intoxications) <- c("id", "Sexe", "Age", "Boeuf", "Oeuf", "Eclair", "Eau", "Nausee", "Vomi", "Douleur", "Diarrhee")
+```
+
+# Introduction
+
+Notre jeu de données contient des données recensées sur les participants d'une grande manifestation en Inde en 1990.\ Suivant la problématique posée, différentes approches (méthodes) apprises en cours et en TP de biostatistiques seront mises en avant.\
+L'objectif principal sera de construire de potentiels modèles qui permettent d'expliquer et de constater les liens statistiques qui peuvent exister. Un grand échantillon des manifestants a donc été interrogé afin d'étudier l'impact de certains plats ou boissons vendus sur place et, a terme, de pouvoir définir le ou les responsables de ces intoxications.
+
+Notre table est composée de onze variables dont une variable identifiant (id), deux caractérisant l'individu (le sexe et l'âge), quatre concernent les aliments consommés lors de la manifestation (boeuf au curry, oeufs frits, eau et quantité d'éclair) et quatre concernent les symptômes ressentis par l'individu (nausée, vomissements, douleur(abdominale) et diarrhée).\
+1094 personnes font partie de notre échantillon.
+
+Ces variables sont codées de la manière suivante :\
+Variables quantitatives :
+
+id : identifiant\
+Age : l'âge en années
+
+Variables qualitatives :
+
+sex : Sexe, 0 : femme / 1 : Homme\
+Boeuf : le sujet a-t-il mangé du boeuf au curry lors de l'événement ? 1 : Oui / 2 : Non\
+Oeuf : le sujet a-t-il mangé des oeufs frits lors de l'événement ? 1 : Oui / 2 : Non\
+Eau : le sujet a-t-il bu de l'eau distribuée ce jour là ? 1 : Oui / 2 : Non\
+Eclair : combien d'éclairs l'individu a mangé ce jour là. Les valeurs 80 et 90 correspondent respectivement à "a mangé des éclair sans se souvenir combien" et "donnée manquante".
+
+Viennent ensuite les variables de symptôme : nausée, vomissement, douleur (abdominale) et diarrhée, constatés chez l'individu. Les symptômes constatés ont été codés de la façon suivante :\
+0 : pas de symtôme / 1 : symptôme / 99 : non renseigné.
+
+Afin de mieux comprendre ces données, nous allons commencer par en faire une première étude descriptive pour voir la présence de la maladie dans la population de la manifestation.
+
+\newpage
+
+# Etude descriptive
+
+Regardons si notre jeu de donnée contient des données manquantes :
+
+```{r, echo=FALSE}
+# Intoxications$Eclair[Intoxications$Eclair==90]<-NA
+# #Intoxications$éclair[Intoxications$éclair==80]<-NA
+# Intoxications$Nausee[Intoxications$Nausee == 99] <- NA
+# Intoxications$Vomi[Intoxications$Vomi == 99] <- NA
+# Intoxications$Douleur[Intoxications$Douleur == 99] <- NA
+# Intoxications$Diarrhee[Intoxications$Diarrhee == 99] <- NA
+# Intoxications$Boeuf[Intoxications$Boeuf==9]<-NA
+# Intoxications$Oeuf[Intoxications$Oeuf==9]<-NA
+# Intoxications$Eau[Intoxications$Eau == 9] <- NA
+# sum(is.na(Intoxications))
+```
+
+```{r, echo=FALSE}
+Donn_manq <- Intoxications %>%
+  filter(Age == 99 |
+    Boeuf == 9 |
+    Oeuf == 9 |
+    Eclair == 90 |
+    Eclair == 80 |
+    Eau == 9) %>%
+  mutate(
+    Eclair = if_else(Eclair == 90,
+      NA_real_,
+      as.numeric(Eclair)
+    ),
+    Boeuf = if_else(Boeuf == 9,
+      NA_integer_,
+      as.integer(Boeuf)
+    ),
+    Oeuf = if_else(Oeuf == 9,
+      NA_integer_,
+      as.integer(Oeuf)
+    ),
+    Age = if_else(Age == 99,
+      NA_integer_,
+      as.integer(Boeuf)
+    ),
+    Eau = if_else(Eau == 9,
+      NA_integer_,
+      as.integer(Eau)
+    )
+  )
+```
+
+Après recodage des données manquantes, on observe qu'il y a dans la table 183 individus avec au moins une donnée manquante. Parmi les 198 valeurs manquantes, il y en a 117 qui appartiennent à la question sur les éclairs.
+
+Ainsi, comme on a peu d'individus avec une ou des informations manquantes ($\frac{183}{1094} \approx 16.7\%$), on a décidé de les retirer du jeu de données.
+On aurait pu remplacer les valeurs pour les individus ne se souvenant plus du nombre d'éclairs qu'ils ont mangé par la médiane de cette variable, sauf qu'après analyse les 5 individus n'ayant plus de souvenir de la quantité d'éclairs ont tous au moins une autre variable avec une donnée manquante.
+
+```{r, echo=FALSE}
+Intoxications <- Intoxications %>%
+  filter(
+    Age != 99,
+    Boeuf != 9,
+    Oeuf != 9,
+    Eclair != 90,
+    Eclair != 80,
+    Eau != 9
+  ) %>%
+  mutate(
+    Symptomes = Nausee + Vomi + Douleur + Diarrhee,
+    Sexe = as.factor(Sexe),
+    Nausee = as.factor(Nausee),
+    Vomi = as.factor(Vomi),
+    Douleur = as.factor(Douleur),
+    Diarrhee = as.factor(Diarrhee),
+    Eclair = as.numeric(Eclair),
+    Boeuf = as.factor(Boeuf),
+    Oeuf = as.factor(Oeuf),
+    Eau = as.factor(Eau),
+    Malade = as.factor(if_else(Symptomes >= 1,
+      1,
+      0
+    ))
+  )
+```
+
+Voici les 5 premières lignes de notre jeu de données :
+
+```{r, echo=FALSE}
+Intoxications %>% head(5)
+```
+
+Nous allons faire un résumé du jeu de données après avoir enlevé les individus avec un ou plusieurs valeurs manquantes.
+
+La fonction summary() permet d'avoir la description statistique de notre table de donnée.
+
+Pour une variable donnée, la fonction renvoie 5 valeurs : le minimum (Min.), le premier quartile (1st Qu.), la médiane (Median), la moyenne (Mean), le troisième quartile (3rd Qu.) et le maximum (Max).
+
+```{r, echo=FALSE}
+Intoxications %>% summary()
+```
+
+Nous allons d'abord observer la répartition des âges des hommes et des femmes au sein de l'échantillon.
+
+```{r, echo=FALSE}
+ggplot(Intoxications, aes(group = Sexe, x = Sexe, y = Age, fill = Sexe)) +
+  geom_boxplot() +
+  ggtitle("Répartition des âges selon le sexe") +
+  scale_fill_discrete(labels = c("Femme", "Homme"))
+```
+
+L'échantillon est composé de 721 hommes et de 373 femmes.\
+On peut supposer que l'échantillon est représentatif du public de la manifestation puisqu'on a un échantillon de taille importante.\
+Alors on observe une population plutôt jeune. Les femmes ont en moyenne 15 ans et aux alentours de 18 ans pour les hommes.\
+Nous allons voir à présent les différences de consommations des plats mise en cause dans les intoxications alimentaires constatées.
+
+```{r, echo=FALSE}
+c(
+  Intoxications$Boeuf %>% as.integer() %>% -1 %>% sum(),
+  Intoxications$Oeuf %>% as.integer() %>% -1 %>% sum(),
+  Intoxications$Eau %>% as.integer() %>% -1 %>% sum()
+) * 100 / nrow(Intoxications)
+```
+
+On a dans notre jeu de données, 93% des gens qui ont consommé du boeuf, 93% des gens qui ont consommé des oeufs et 97% des gens qui ont bu de l'eau.
+
+```{r, echo=FALSE}
+sum(Intoxications$Boeuf %>% as.integer() %>% -1 &
+  Intoxications$Oeuf %>%
+    as.integer() %>%
+    -1 &
+  Intoxications$Eau %>%
+    as.integer() %>%
+    -1, na.rm = T)
+```
+
+Au sein de l'échantillon, chaque plat a été consommé par une large proportion d'individus.\
+Le boeuf au curry, l'oeuf frit et l'eau ont été pris par environ 100 individus chacun, et 800 (soit $\approx 87.8\%$ ) personnes ont consommé les trois.
+
+```{r, echo=FALSE}
+table(Intoxications$Eclair)
+```
+
+On a également, 830 personnes (échantillon totale - personne n'ayant pas mangé d'éclair = 1094-264 = 830) ayant consommées des éclairs, entre une moitié et 20 éclairs.
+
+Nous allons nous intéresser à présent à une analyse similaire sur les différents symptômes.
+
+```{r, echo=FALSE}
+c(
+  Intoxications$Nausee %>% as.integer() %>% -1 %>% sum(),
+  Intoxications$Vomi %>% as.integer() %>% -1 %>% sum(),
+  Intoxications$Douleur %>% as.integer() %>% -1 %>% sum(),
+  Intoxications$Diarrhee %>% as.integer() %>% -1 %>% sum()
+) * 100 / nrow(Intoxications)
+```
+
+Chacun des symptômes a été ressenti par 21 à 39% des personnes. Le symptôme le plus fréquent étant la nausée, le moins fréquent la diarrhée. 201 personnes soient presque 20% de l'échantillon ont ressenti tous les symptômes listés.
+
+```{r, echo=FALSE}
+sum(Intoxications$Nausee %>% as.integer() %>% -1 &
+  Intoxications$Vomi %>%
+    as.integer() %>%
+    -1 &
+  Intoxications$Douleur %>%
+    as.integer() %>%
+    -1 &
+  Intoxications$Diarrhee %>%
+    as.integer() %>%
+    -1, na.rm = T)
+```
+
+170 personnes soit presque 15% de l'échantillon ont ressentis tous les symptômes.
+
+```{r, echo=FALSE}
+g1 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Boeuf,
+      fill = Malade
+    )
+  )
+
+g2 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Oeuf,
+      fill = Malade
+    )
+  )
+
+g3 <- ggplot() +
+  geom_histogram(
+    data = Intoxications,
+    aes(Age,
+      fill = Malade
+    ),
+    binwidth = 5
+  )
+
+g4 <- ggplot() +
+  geom_histogram(
+    data = Intoxications,
+    aes(Eclair,
+      fill = Malade
+    ),
+    binwidth = 1
+  )
+
+g5 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Sexe,
+      fill = Malade
+    )
+  )
+
+
+(g5 | g1 | g2) /
+  g3 /
+  g4 +
+  plot_layout(guides = "collect")
+```
+
+```{r, echo=FALSE, fig.height=3}
+g1 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Nausee,
+      fill = Malade
+    )
+  )
+
+g2 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Diarrhee,
+      fill = Malade
+    )
+  )
+
+g3 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Vomi,
+      fill = Malade
+    )
+  )
+
+g4 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Douleur,
+      fill = Malade
+    )
+  )
+
+(g1 | g2) /
+  (g3 | g4) +
+  plot_layout(guides = "collect")
+```
+
+
+```{r, echo=FALSE, fig.height=4}
+
+g6 <- ggplot() +
+  geom_boxplot(
+    data = Intoxications,
+    aes(
+      x = Malade,
+      y = Age,
+      fill = Malade
+    )
+  )
+
+g7 <- ggplot() +
+  geom_boxplot(
+    data = Intoxications,
+    aes(
+      x = Malade,
+      y = Eclair,
+      fill = Malade
+    )
+  )
+
+(g6 | g7) +
+  plot_layout(guides = "collect")
+```
+
+\newpage
+
+# Etude éthiologique
+
+Maintenant que nous savons que quasiment la moitié de la population est tombé malade après cette manifestation, nous allons tenter de savoir quels sont les facteurs qui ont ammené à cette intoxication. Nous allons le faire avec deux modèle de régression (logistique et polytomique ordonné)
+
+## Régression logistique
+
+Comme nous avons pu le voir dans la partie précédente, nous avons créé une variable $Malade$ comme variable qualitative codé par 0 ou 1, d'où l'utilisation d'une régression logistique.
+
+### Sélection du modèle
+
+Nous allons chercher le meilleur modèle possible pour expliquer cette variable $Malade$, au vu du critère d'Akaike définit comme : $$AIC = -2ln(V) + 2k$$ Avec $k$ le nombre de paramètre et $V$ la vraisemblance.
+
+Commençons par la procédure descendante. La méthode descendante consiste à partir du modèle complet avec toutes les covariables et les intéractions entre elles, puis à chaque étapte d'enlever un terme du modèle (en commençant par les intéractions de plus haut degré)
+
+```{r,results='hide', warning=FALSE}
+f <- stepAIC(
+  object = glm(
+    formula = Malade ~ Sexe * Eau * Boeuf * Oeuf * Age * Eclair,
+    family = "binomial",
+    data = Intoxications
+  ),
+  direction = "backward"
+)
+```
+
+```{r}
+f$converged
+```
+
+Nous obtenons que la méthode utilisée ne converge pas. Ce qui nous pose un problème. Ceci est expliqué par le fait qu'avec le modèle complet nous avons des intercations de haut degré et nous n'avons pas forcément un ou plusieurs individus correspondant à ce "profil".
+
+Pour cette raison nous allons plutôt utiliser la méthode ascendante pour ce modèle. La méthode ascendante consiste à partir du modèle le plus basique possible (la variable expliquée en fonction de l'intercept) auquel nous allons ajouter les différentes covariables et potentiellement les interactions entre elles.
+
+```{r, results='hide'}
+g <- glm(
+  formula = Malade ~ 1,
+  family = "binomial",
+  data = Intoxications
+)
+
+fitforw <- stepAIC(
+  object = g,
+  direction = "forward",
+  scope = list(
+    lower = g,
+    upper = ~ Sexe * Age * Boeuf * Oeuf * Eau * Eclair
+  )
+)
+```
+
+Le modèle que nous obtenons est le suivant: $$ Malade \sim Eclair + Sexe + Age + Eclair:Age + Sexe:Age$$
+
+Nous allons analyser la significativité des coefficients du modèle final que nous avons obtenu pour cette régression:
+
+```{r, echo=FALSE}
+summary(fitforw)
+```
+
+Première observation que nous pouvons avoir, est le fait que tous les coefficients sont significatifs au seuil de 5%. Nous avons un $AIC$ de 1076 qui est donc le minimum obtenu suite à notre procédure ascendante.
+
+```{r, echo=FALSE, results='hide', warning=FALSE}
+CI <- as.data.frame(confint(fitforw))
+```
+
+```{r, echo=FALSE}
+ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", col = "black") +
+  geom_errorbar(
+    data = CI,
+    aes(
+      x = row.names(CI),
+      ymin = CI[, 1],
+      ymax = CI[, 2],
+      colour = row.names(CI)
+    )
+  ) +
+  xlab("Covariables") +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 0.7))
+```
+
+### Interprétation des paramètres
+
+L'odds de tomber malade pour les hommes sera multiplié par au moins $e^{0.938} = 2.555$ et par au plus $e^{2.603} = 13.517$.
+
+En augmentant l'age d'une unité, l'odds de tomber malade sera multiplié par au moins $e^{0.024} = 1.024$ et par au plus $e^{0.096} = 1.101$.
+
+En augmentant la consommation d'éclair d'une unité, l'odds de tomber malade sera multiplié par au moins $e^{0.923} = 2.518$ et par au plus $e^{1.463} = 4.318$.
+
+Pour l'interaction entre la consommation d'éclair et l'age nous avons: $$ \beta = log \left( \frac{odds(Y = 1 | Age = x + 1, Eclair = w)}{odds(Y = 1 | Age = x, Eclair = w)}  \right)  - log \left( \frac{odds(Y = 1 | Age = x, Eclair = w + 1)}{odds(Y = 1 | Age = x, Eclair = w)} \right) $$ Cela va multiplier l'odds de tomber malade par au moins $e^{-0.0369} = 0.964$ et par au plus $e^{-0.018} = 0.982$.
+
+Pour l'interaction entre le sexe et l'age nous avons: $$ \beta = log \left( \frac{odds(Y = 1 | Age = x + 1, Sexe = 1)}{odds(Y = 1 | Age = x , Sexe = 1)}  \right)  - log \left( \frac{odds(Y = 1 | Age = x + 1, Sexe = 0)}{odds(Y = 1 | Age = x, Sexe = 0)} \right) $$ Nous intéressons donc a la différence de l'effet d'une année supplémentaire parmi les hommes et les femmes. Parmis les hommes, cela va multiplier l'odds de tomber malade par au moins $e^{-0.107} = 0.899$ et par au plus $e^{-0.025} = 0.976$.
+
+\newpage
+
+## Régression polytomique ordonnée
+
+### Création des classes
+
+Dans cette partie nous allons étudier l'influence de la consommation des différents aliments, de l'âge et du sexe sur le nombre symptômes par sujet. Nous devons commencer par choisir les classes des symptômes et comment les répartir. notre premier choix était de répartir par nombre de symptômes (0, 1, 2, 3, 4) donc en 5 classes, regardons ce que nous obtenons:
+
+```{r, echo=FALSE}
+g1 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Boeuf, fill = as.factor(Symptomes)),
+    position = "dodge"
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+g2 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Oeuf, fill = as.factor(Symptomes)),
+    position = "dodge"
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+g3 <- ggplot() +
+  geom_histogram(
+    data = Intoxications,
+    aes(Age, fill = as.factor(Symptomes)),
+    binwidth = 5
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+g4 <- ggplot() +
+  geom_histogram(
+    data = Intoxications,
+    aes(Eclair, fill = as.factor(Symptomes)),
+    binwidth = 1
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+g5 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Sexe, fill = as.factor(Symptomes)),
+    position = "dodge"
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+(g5 | g1 | g2) /
+  ((g4 / g3)) +
+  plot_layout(guides = "collect")
+```
+
+```{r, echo=FALSE, fig.height=2}
+Intoxications <- Intoxications %>%
+  mutate(id = 1)
+
+g8 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(id,
+      fill = as.factor(Symptomes)
+    )
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+g8
+```
+
+On remarque directement que pour certaines classes, nous avons très peu d'individus, ce qui va rendre l'étude plus complexe. Une première analyse que nous pouvons donc faire c'est qu'une personne malade aura plus tendance à avoir 3 ou 4 symptômes, mais ce n'est pas le propos de notre analyse.
+
+Pour corriger ce problème, nous avons créé 3 classes (Sain, Peu malade et Très malade)
+
+```{r, echo=FALSE, fig.height=2}
+Intoxications <- Intoxications %>%
+  mutate(Symptomes = case_when(
+    Symptomes == 0 ~ "Sain",
+    Symptomes %in% c(1, 2) ~ "Peu malade",
+    Symptomes %in% c(3, 4) ~ "Tres malade",
+    TRUE ~ ""
+  ))
+
+Intoxications$Symptomes <- Intoxications$Symptomes %>%
+  as.factor() %>%
+  ordered(c("Sain", "Peu malade", "Tres malade"))
+
+g8 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(id,
+      fill = as.factor(Symptomes)
+    )
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+g8
+```
+
+
+```{r, echo=FALSE}
+Intoxications %>%
+  pull(var = Symptomes) %>%
+  summary()
+```
+
+Même si les nombre de personnes "Peu malade" reste peu élevé nous allons garder ces classes.
+
+### Analyse de la population en fonction de leur niveau de symptôme
+
+Regardons la distribution des individus en fonction de leur caractéristiques et de leur niveau de symptôme.
+
+```{r, echo=FALSE}
+g1 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Boeuf, fill = Symptomes),
+    position = "dodge"
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+g2 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Oeuf, fill = Symptomes),
+    position = "dodge"
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+g3 <- ggplot() +
+  geom_histogram(
+    data = Intoxications,
+    aes(Age, fill = Symptomes),
+    binwidth = 5
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+g4 <- ggplot() +
+  geom_histogram(
+    data = Intoxications,
+    aes(Eclair, fill = Symptomes),
+    binwidth = 1
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+g5 <- ggplot() +
+  geom_bar(
+    data = Intoxications,
+    aes(Sexe, fill = Symptomes),
+    position = "dodge"
+  ) +
+  guides(fill = guide_legend(title = "Symptomes"))
+
+(g5 | g1 | g2) /
+  ((g4 / g3)) +
+  plot_layout(guides = "collect")
+```
+
+### Sélection du modèle
+
+Nous allons utiliser la procédure ascendante en fonction du critère AIC comme nous l'avons fait pour le modèle précédent.
+
+```{r, results='hide'}
+g <- polr(Symptomes ~ 1, data = Intoxications)
+
+fitforw <- stepAIC(
+  object = g,
+  direction = "forward",
+  scope = list(
+    lower = g,
+    upper = ~ Sexe * Age * Boeuf * Oeuf * Eau * Eclair
+  )
+)
+```
+
+Nous obtenons le modèle suivant: $$ Symptomes \sim Eclair + Eau + Sexe + Age + Eclair:Eau + Eclair:Sexe  + $$
+$$ Sexe:Age + Eclair:Age + Eclair:Sexe:Age$$
+Ce modèle est plus complexe que le modèle de régression logistique de la partie précedente, d'où son AIC plus élevé.
+
+```{r, echo=FALSE}
+summary(fitforw)
+```
+
+L'inconvénient de la fonction $polr$ est qu'on ne voit pas la significativité des paramètres, pour cela nous allons calculer les intervalles de confiance pour chaque paramètre et retirer ceux dont la valeur contient la valeur 0.
+
+```{r, echo=FALSE, results='hide', warning=FALSE}
+CI <- as.data.frame(confint(fitforw))
+```
+
+```{r, echo=FALSE}
+ggplot() +
+  geom_errorbar(
+    data = CI,
+    aes(
+      x = row.names(CI),
+      ymin = CI[, 1],
+      ymax = CI[, 2],
+      colour = row.names(CI)
+    )
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Covariables") +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 0.7))
+```
+
+Refaisons un modèle seulement avec les paramètres que l'on garde:
+
+```{r}
+f <- polr(Symptomes ~ Eclair + Sexe + Age + Eclair:Sexe + Eclair:Age + Eclair:Sexe:Age,
+  data = Intoxications
+)
+
+summary(f)
+```
+
+Le modèle gardé est: $$Symptomes \sim Eclair + Sexe + Age + Eclair:Sexe + Eclair:Age + Eclair:Sexe:Age$$ Il est très semblable au modèle de régression logistique obtenu dans la partie précédente.
+
+On remarque que le critère AIC est plus élevé que celui du modèle précédent (1507 contre 1495), mais nous allons préféré ce modèle.
+
+```{r, echo=FALSE}
+CI <- CI %>%
+  filter((CI[, 1] > 0 & CI[, 2] > 0) |
+    (CI[, 1] < 0 & CI[, 2] < 0))
+```
+
+```{r, echo=FALSE}
+ggplot() +
+  geom_errorbar(
+    data = CI,
+    aes(
+      x = row.names(CI),
+      ymin = CI[, 1],
+      ymax = CI[, 2],
+      colour = row.names(CI)
+    )
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Covariables") +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, vjust = 0.7))
+```
+
+### Interprétation des paramètres
+
+Toutes choses égales par ailleurs, l'augmentation de consommation d'éclairs d'une unité va diviser l'odds de Symptomes \< Peu malade par au moins $e^{0.662} = 1.939$ et par au plus $e^{2.284} = 9.822$, elle divise également l'odds de Symptomes \< Très malade par au moins $e^{0.662} = 1.939$ et par au plus $e^{2.284} = 9.822$.
+
+Toutes choses égales par ailleurs, l'augmentation de l'age d'une unité va diviser l'odds de Symptomes \< Peu malade par au moins $e^{0.026} = 1.026$ et par au plus $e^{0.140} = 1.15$, elle divise également l'odds de Symptomes \< Très malade par au moins $e^{0.026} = 1.026$ et par au plus $e^{0.140} = 1.15$.
+
+Toutes choses égales par ailleurs, être un homme va diviser l'odds de Symptomes \< Peu malade par au moins $e^{1.875} = 6.521$ et par au plus $e^{4.948} = 140.996$, elle divise également l'odds de Symptomes \< Très malade par au moins $e^{1.875} = 6.521$ et par au plus $e^{4.948} = 140.996$.
+
+Pour l'interaction entre le sexe et l'age nous avons: $$ \beta = log \left( \frac{odds(Y = 1 | Age = x + 1, Sexe = 1)}{odds(Y = 1 | Age = x , Sexe = 1)}  \right)  - log \left( \frac{odds(Y = 1 | Age = x + 1, Sexe = 0)}{odds(Y = 1 | Age = x, Sexe = 0)} \right) $$ Nous intéressons donc a la différence de l'effet d'une année supplémentaire parmi les hommes et les femmes. Parmis les hommes, cela va diviser l'odds de Symptomes \< Peu malade par au moins $e^{-0.17} = 0.838$ et par au plus $e^{-0.046} = 0.954$. Nous intéressons donc a la différence de l'effet d'une année supplémentaire parmi les hommes et les femmes. Parmis les hommes, cela va diviser l'odds de Symptomes \< Très malade par au moins $e^{-0.17} = 0.838$ et par au plus $e^{-0.046} = 0.954$.
+
+Pour l'interaction entre la consommation d'éclair et l'age nous avons: $$ \beta = log \left( \frac{odds(Y = 1 | Age = x + 1, Eclair = w)}{odds(Y = 1 | Age = x, Eclair = w)}  \right)  - log \left( \frac{odds(Y = 1 | Age = x, Eclair = w + 1)}{odds(Y = 1 | Age = x, Eclair = w)} \right) $$ Cela va diviser l'odds de Symptomes \< Peu malade par au moins $e^{-0.063} = 0.938$ et par au plus $e^{-0.012} = 0.987$. Cela va diviser l'odds de Symptomes \< Très malade par au moins $e^{-0.063} = 0.938$ et par au plus $e^{-0.012} = 0.987$.
+
+Pour l'interaction entre la consommation d'éclair, le sexe et l'age nous avons, cela va diviser l'odds de Symptomes \< Peu malade par au moins $e^{0.005} = 1.001$ et par au plus $e^{0.057} = 1.059$. Cela va diviser l'odds de Symptomes \< Très malade par au moins $e^{0.005} = 1.001$ et par au plus $e^{0.057} = 1.059$.
+
+\newpage
+## Régressions linéaires généralisées
+
+Nous aimerions savoir si le fait de manger plus ou moins d'éclairs à eu une influence sur l'apparition des symptômes étudiés. Pour cela, nous allons utiliser une régression linéaire généralisée expliquant chaque symptôme grâce à la variable éclair.
+
+Pour cette partie, on considérera les personnes ne se souvenant plus du nombre d'éclairs consommés comme des valeurs manquantes puisqu'ici c'est le nombre d'éclairs mangés qui importe.
+
+```{r}
+attach(Intoxications)
+reg_gen_Nausee <- glm(Nausee ~ Eclair, family = binomial, data = Intoxications)
+reg_gen_Nausee
+```
+
+```{r}
+confint(reg_gen_Nausee)
+```
+
+On observe que manger un éclair supplémentaire multiplie l'odds d'avoir eu de la nausée d'au moins exp(0.43) = 1.54 et d'au plus exp(0.66) = 1.93.
+
+```{r}
+reg_gen_Vomi <- glm(Vomi ~ Eclair, family = binomial, data = Intoxications)
+reg_gen_Vomi
+```
+
+```{r}
+confint(reg_gen_Vomi)
+```
+
+Manger un éclair supplémentaire multiplie l'odds d'avoir eu des vomissements d'au moins exp(0.38) = 1.46 et d'au plus exp(0.60) = 1.82.
+
+```{r}
+reg_gen_Douleur <- glm(Douleur ~ Eclair, family = binomial, data = Intoxications)
+reg_gen_Douleur
+```
+
+```{r}
+confint(reg_gen_Douleur)
+```
+
+Manger un éclair supplémentaire multiplie l'odds d'avoir eu des douleurs d'au moins exp(0.30) = 1.35 et d'au plus exp(0.51) = 1.67.
+
+```{r}
+reg_gen_Diarrhee <- glm(Diarrhee ~ Eclair, family = binomial, data = Intoxications)
+reg_gen_Diarrhee
+```
+
+```{r}
+confint(reg_gen_Diarrhee)
+```
+
+Manger un éclair supplémentaire multiplie l’odds d’avoir eu de la diarrhée d’au moins 
+exp(0.18) = 1.20 et d’au plus exp(0.36) = 1.43.  
+  
+Cette dernière partie nous permet de conclure à une influence d’une grande consommation 
+d’éclair sur l’apparition des différents symptômes.  
+En effet, pour chaque symptôme, on observe que manger plus d’éclairs augmente l’odds d'avoir un symptôme. La consommation d’éclairs a donc provoqué un grand nombre d’intoxications alimentaires, après cette manifestation.  
+
+
+\newpage
+
+# Conclusion
+
+Ce projet s’est révélé très enrichissant dans la mesure où il a consisté en une approche concrète du métier de biostatisticien. En effet, la prise d’initiative, le respect des délais et le travail en équipe seront des aspects essentiels de notre futur métier.
+
+Nous nous sommes donc mis dans la peau de biostatisticiens et nous avons mis en place des techniques qu'ils peuvent utiliser.
+
+Nous avons commencé avec une étude descriptive avant de faire une étude étiologique avec deux modèles de régression (logistique et polytomique ordonné). Ces deux modèles nous ont donné une liste de paramètres qui sont des facteurs de risque et les paramètres qui semblent protéger les individus. Nous avons pu voir que le fait d'être un homme est un facteur de risque très important dans les deux modèles, tout comme l'age et la consommation, mais dans des proportions plus faible. Dans le modèle de régression logistique les interactions $Eclair:Age$ et $Sexe1:Age$ sont eux des facteurs protecteurs.
+
+Dans la régression polytomique ordonnée toutes les interactions entre 2 covariables sont protectrices par contre l'interaction entre les 3 covariables $Eclair:Sexe1:Age$ est un léger facteur de risque.
+
+Puis, dans la partie régression linéaire généralisée, nous avons pu remarquer que les nombreuses intoxications alimentaires sont dues à la consommation d’éclairs vendus sur place lors de la manifestation.
+
+\newpage
+
+# Bibliographie
+  
+1. Toxi-infection alimentaire collective due à Staphylococcus aureus, Longevelle-sur-le-Doubs, juillet 2003  
+Franck Bonnetain, Sylvia Carbonel, Jeanine Stoll, Dominique Legros.  
+  
+2. EL SANHARAWI, Mohamed et NAUDET, F. Comprendre la régression logistique. Journal français d'ophtalmologie, 2013, vol. 36, no 8, p. 710-715.  
+
+3. HERRMANN, François et PETITPIERRE, Nicolas Julien. Techniques de régression pour l'analyse des facteurs de risque de chute. Annales de gérontologie, 2009, vol. 2, no 4, p. 225-229.  
+  
+4. Loew F, Registe-Rameau Y, Kressig R, Marcant D, Herrmann F, Michel J. Epidemiology of falls in a geriatric ward: rationale for a quality program. In : Michel JP, ed. Management of Aging. The University of Geneva Experience, Vol 30. Karger, 1999 : 44-52.  
+  
+5. JAMBON, C., DEJARDIN, O., MORLAIS, F., et al. Déterminants socio-géographiques de la prise en charge des cancers en France–Exemple des cancers colorectaux incidents entre 1997 et 2004 dans le département du Calvados. Revue d'épidémiologie et de santé publique, 2010, vol. 58, no 3, p. 207-216.  
+  
+6. E-ANDJAFONO, Daniel Okitundu Luwa, AYANNE, Marie-Therese Sombo Safi, MAKILA-MABE, Guy Bumoko, et al. Troubles socio-émotionnels de l’enfant en milieu Konzo, un syndrome paralytique de nature épidémique associé à une intoxication cyanhydrique d’origine alimentaire en Afrique sub-saharienne. Pan African Medical Journal, 2018, vol. 31, no 1.
+
+
+
